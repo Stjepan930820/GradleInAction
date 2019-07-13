@@ -1,0 +1,39 @@
+plugins {
+    id 'groovy'
+    id 'java'
+}
+
+group 'com.cpn.gradle'
+version '1.0-SNAPSHOT' //定义项目版本
+
+sourceCompatibility = 1.8 //设置Java版本编译兼容1.8
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.manning.gia.todo.ToDoApp' //将Main-Class头添加到JAR文件代码清单中
+    }
+}
+//改变项目默认结构
+sourceSets {
+    main {
+        java {
+            srcDirs('src')//用不同目录的列表代替约定的源代码目录
+        }
+    }
+    test {
+        java {
+            srcDirs('test')//用不同目录的列表代替约定的测试代码目录
+        }
+    }
+}
+buildDir = 'out' //改变项目输出属性（路径）到out目录
+
+
+repositories {
+    mavenCentral(url: 'http://maven.aliyun.com/nexus/content/groups/public/')
+}
+
+dependencies {
+    compile 'org.codehaus.groovy:groovy-all:2.3.11'
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
