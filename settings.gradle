@@ -1,2 +1,7 @@
 rootProject.name = 'action-in-gradle'
+include 'Cargo'
+include 'model'
+include 'repository'
+include 'web'
+
 

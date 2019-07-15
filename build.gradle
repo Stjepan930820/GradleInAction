@@ -1,39 +1,381 @@
+import com.sun.org.apache.xpath.internal.operations.Bool
+import com.sun.xml.internal.rngom.ast.builder.Include
+
+buildscript {
+    repositories {
+        mavenCentral(url: 'http://maven.aliyun.com/nexus/content/groups/public/')
+    }
+    dependencies {
+        classpath 'org.akhikhl.gretty:gretty:2.0.0'
+    }
+}
+
 plugins {
     id 'groovy'
     id 'java'
+    id 'war'
+    id 'maven'
 }
+apply plugin: 'org.akhikhl.gretty'
+
+if (!project.plugins.findPlugin(org.akhikhl.gretty.GrettyPlugin))
+    project.apply(plugin: org.akhikhl.gretty.GrettyPlugin)
 
 group 'com.cpn.gradle'
 version '1.0-SNAPSHOT' //定义项目版本
 
 sourceCompatibility = 1.8 //设置Java版本编译兼容1.8
+targetCompatibility = 1.8
 
+//将Main-Class头添加到JAR文件代码清单中
 jar {
     manifest {
-        attributes 'Main-Class': 'com.manning.gia.todo.ToDoApp' //将Main-Class头添加到JAR文件代码清单中
+        attributes 'Main-Class': 'com.manning.gia.todo.ToDoApp'
     }
 }
 //改变项目默认结构
-sourceSets {
-    main {
-        java {
-            srcDirs('src')//用不同目录的列表代替约定的源代码目录
-        }
+//sourceSets {
+//    main {
+//        java {
+//            srcDirs('src')//用不同目录的列表代替约定的源代码目录
+//        }
+//    }
+//    test {
+//        java {
+//            srcDirs('test')//用不同目录的列表代替约定的测试代码目录
+//        }
+//    }
+//}
+//buildDir = 'out' //改变项目输出属性（路径）到out目录
+
+//定制war插件
+//webAppDirName='webfiles'//改变web应用的源代码目录
+//war{
+//    from 'static' //将css和jsp目录添加到war文件的根目录下
+//}
+
+/**
+ 1、将包装器任务添加到构建脚本中
+ 2、gradle wrapper执行包装器任务，生成包装器文件
+ note：
+ 1、名字不要求为wrapper，任何都可以
+ 2、包装器文件应该提交到版本控制系统中
+ */
+
+task wrapper1(type: Wrapper) {
+    gradleVersion = '5.5.1'//请求的gradle版本
+    distributionUrl = ''//获取gradle包装器的url
+    distributionPath = ''//包装器被解压缩后存放的相对路径
+}
+
+
+gretty {
+    httpEnabled = true
+    servletContainer = "tomcat8"
+    host = "localhost"
+    httpPort = 8080
+    scanInterval = 1
+    fastReload = true
+    inplaceMode = "soft"
+    loggingLevel = "DEBUG"
+    consoleLogEnabled = true
+
+
+    debugPort = 6007 //调试端口
+    debugSuspend = true //调试暂停
+}
+
+/**
+ //在不显式使用project变量的情况下设置项目描述
+ setDescription("myProject")
+ println "$name：" + project.description
+
+ //扩展属性
+ project.ext.myProp = 'myValue'
+ ext {someOtherProp = 1223}assert myProp == 'myValue'
+
+ println project.someOtherProp
+ ext.someOtherProp = 567
+
+ assert project.exampleProp == 'myValue'
+ task printGradleProperty << {println "Second property: $someOtherProp"}*/
+
+/**
+ * 给现有task添加动作
+ * 可以用在不是自己编写的task执行自定义逻辑时
+ */
+
+task printVersion {
+    doFirst {
+        println "Before reading the project version"
     }
-    test {
-        java {
-            srcDirs('test')//用不同目录的列表代替约定的测试代码目录
+    doLast {
+        println "Version:$version"
+    }
+    group = 'versioning'
+}
+
+printVersion.doFirst {
+    println 'First action'
+}
+printVersion.doLast {
+    println "Last action"
+}
+
+//访问DefaultTask属性
+/**
+ * description：描述任务的作用
+ * group:用于定义task的逻辑分组
+ */
+task printVersion1(group: 'versioning', description: '打印项目版本') {
+    doLast {
+        logger.quiet "Version：$version"
+    }
+}
+//task依赖
+/**
+ * dependsOn方法允许声明依赖一个或多个task
+ * task的执行顺序是有task的输入/输出规范自动确定的
+ *
+ */
+task first {
+    doLast {
+        println 'first'
+    }
+}
+
+task second {
+    doLast {
+        println 'second'
+    }
+}
+
+task printVersion3(group: 'versioning', dependsOn: [first, second]) {
+    doLast {
+        logger.quiet "Version：$version"
+    }
+}
+
+task third {
+    doLast {
+        println "third"
+    }
+}
+third.dependsOn('printVersion3')
+//=======================================
+version = new ProjectVersion(0, 1)
+
+class ProjectVersion {
+    Integer major
+    Integer minor
+    Boolean release
+
+    ProjectVersion(Integer major, Integer minor) {
+        this.major = major
+        this.minor = minor
+        this.release = Boolean.FALSE
+
+    }
+
+    ProjectVersion(Integer major, Integer minor, Boolean release) {
+        this(major, minor)
+        this.release = release
+    }
+
+    @Override
+    String toString() {
+        "$major.$minor${release ? '' : '-SNAPSHOT'}"
+    }
+}
+
+/**
+ * task配置块
+ * task配置块永远在task动作执行之前被执行，所以可以读到新的版本信息
+ */
+//Project接口提供了file方法，她会创建一个相对于项目目录的java.io.File实例
+ext.versionFile = file('version.properties')
+
+task loadVersion {
+    project.version = readVersion()
+}
+
+ProjectVersion readVersion() {
+    logger.quiet 'Reading the version file.'
+
+    //如果版本文件不存在，抛出异常
+    if (!versionFile.exists()) {
+        throw new GradleException("Required version file does not exist: $versionFile.canonicalPath")
+    }
+
+    Properties versionProps = new Properties()
+    //Groovy的文件实现通过添加新的方法来读取InputStream
+    versionFile.withInputStream { stream ->
+        versionProps.load(stream)
+    }
+    //在Groovy中，如果return是方法中最后一天语句的话，则可以省略
+    new ProjectVersion(versionProps.major.toInteger(), versionProps.minor.toInteger(), versionProps.release.toBoolean())
+}
+/**
+ * Gradle生命周期
+ * 初始化阶段--->配置阶段---->执行阶段
+ * 初始化阶段：
+ *  Gradle为项目创建了一个Project实例
+ * 配置阶段：
+ *  这个阶段适合于为项目或指定task设置所需的配置
+ * 执行阶段：
+ *  执行阶段所有task都应该以正确的顺序被执行，执行顺序由他们的依赖决定
+ *  执行阶段如果任务被认为没有修改过，将被跳过
+ *
+ */
+
+/**
+ *  task的inputs和outputs
+ *      Gradle通过比较两个构建task的inputs和outputs决定task是否是最新的，只要当inputs和outputs不同时，task才会运行
+ */
+task makeReleaseVersion(group: 'versioning', description: 'Makes project a release version.') {
+
+    inputs.property('release', version.release)
+    outputs.file versionFile
+
+    doLast {
+        version.release = true
+        ant.propertyfile(file: versionFile) {
+            entry(key: 'release', type: 'string', operation: '=', value: 'true')
         }
     }
 }
-buildDir = 'out' //改变项目输出属性（路径）到out目录
+
+/**
+ * 增强的task：自定义的task类
+ *  1、创建一个继承DefaultTask的类
+ */
+class ReleaseVersionTask extends DefaultTask {
+    @Input
+    Boolean release
+    @OutputFile
+    File destFile
+
+    ReleaseVersionTask() {
+        group = 'versioning'
+        description = 'Makes project a release version.'
+    }
+
+    @TaskAction
+    void start() {
+        project.version.release = true
+        ant.propertyfile(file: destFile) {
+            entry(key: 'release', type: 'string', operation: '=', value: 'true')
+        }
+    }
+}
+//ext.versionFile1 = file('project-version.properties')
+//不同的POGO
+class ProjectVersion1 {
+    Integer min
+    Integer maj
+    Boolean prodReady
+
+    @Override
+    String toString() {
+        "$maj.$min${prodReady ? '' : '-SNAPSHOT'}"
+    }
+}
+//自定义task的重用
+/**
+ task makeReleaseVersion(type: ReleaseVersionTask) {release = version.prodReady
+ destFile = new File('project-version.properties')}//Gradle 内置的一些task类型
+ task createDistribution(type: zip, dependsOn: makeReleaseVersion1) {//隐式引用war task的输出
+ from war.outputs.files
+ //把所有的源文件都放到zip文件的src目录下
+ from(sourceSets*.allSource) {into 'src'}from(rootDir) {//为ZIP文件添加版本文件
+ include versionFile.name}}task backupReleaseDistribution(type: Copy) {from createDistribution.outputs.files
+ into "$buildDir/backup"}task release(dependsOn: backupReleaseDistribution) {doLast {logger.quiet 'Reading the version file.'}}task incrementMajorVersion(group: 'versioning', description: 'Increments project major version.') << {String currentVersion = version.toString()
+ ++version.major
+ String newVersion = version.toString()
+ logger.info "Incrementing major project version: $currentVersion -> $newVersion"
+
+ ant.propertyfile(file: versionFile) {entry(key: 'major', type: 'int', operation: '+', value: 1)}}task incrementMinorVersion(group: 'versioning', description: 'Increments project minor version.') << {String currentVersion = version.toString()
+ ++version.minor
+ String newVersion = version.toString()
+ logger.info "Incrementing minor project version: $currentVersion -> $newVersion"
+
+ ant.propertyfile(file: versionFile) {entry(key: 'minor', type: 'int', operation: '+', value: 1)}}//声明task规则
+ tasks.addRule("Pattern: increment<Classifier>Version – Increments the project version classifier.") { String taskName ->
+ if (taskName.startsWith('increment') && taskName.endsWith('Version')) {task(taskName) << {String classifier = (taskName - 'increment' - 'Version').toLowerCase()
+ String currentVersion = version.toString()
+
+ switch (classifier) {case 'major': ++version.major
+ break
+ case 'minor': ++version.minor
+ break
+ default: throw new GradleException("Invalid version type '$classifier. Allowed types: ['Major', 'Minor']")}String newVersion = version.toString()
+ logger.info "Incrementing $classifier project version: $currentVersion -> $newVersion"
+
+ ant.propertyfile(file: versionFile) {entry(key: classifier, type: 'int', operation: '+', value: 1)}}}}//通过生命周期钩子实现发布版本功能
+ //注册的生命周期钩子在 task图生产后被调用
+ gradle.taskGraph.whenReady { TaskExecutionGraph taskGraph ->
+ if (taskGraph.hasTask(release)) {//查看执行图中是否包含task release
+ if (!version.release) {version.release = true
+ ant.propertyfile(file: versionFile) {entry(key: 'release', type: 'string', operation: '=', value: 'true')}}}}/**
+ * TaskExecutionGraphListener接口：用于监听task执行图事件
+ */
+
+/*
+//通过生命周期监听器实现发布版本功能
+class ReleaseVersionListener implements TaskExecutionGraphListener {
+    final static String releaseTaskPath = ':release'
+
+    @Override
+    void graphPopulated(TaskExecutionGraph taskGraph) {
+        if (taskGraph.hasTask(releaseTaskPath)) {
+            List<Task> allTasks = taskGraph.allTasks
+            Task releaseTask = allTasks.find { it.path == releaseTaskPath }
+            Project project = releaseTask.project
+
+            if (!project.version.release) {
+                project.version.release = true
+                project.ant.propertyfile(file: project.versionFile) {
+                    entry(key: 'release', type: 'string', operation: '=', value: 'true')
+                }
+            }
+        }
+    }
+}
+gradle.taskGraph.addTaskExecutionGraphListener(new ReleaseVersionListener())
+*/
 
 
+//项目之间的依赖关系
+//configure(':repository') {
+//    dependencies {
+//        compile(project(":model"))
+//    }
+//}
+
+
+//project(':repository') {
+//    dependencies {
+//
+//    }
+//}
+
+
+//web项目依赖其他内部依赖和外部依赖
+configure(':web') {
+    dependencies {
+        
+    }
+}
 repositories {
     mavenCentral(url: 'http://maven.aliyun.com/nexus/content/groups/public/')
 }
 
 dependencies {
     compile 'org.codehaus.groovy:groovy-all:2.3.11'
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
+    providedCompile group: 'javax.servlet', name: 'javax.servlet-api', version: '4.0.1'
+    runtime group: 'javax.servlet', name: 'jstl', version: '1.2'
+
+
     testCompile group: 'junit', name: 'junit', version: '4.12'
 }
